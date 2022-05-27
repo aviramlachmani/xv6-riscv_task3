@@ -148,7 +148,7 @@ void            trapinit(void);
 void            trapinithart(void);
 extern struct spinlock tickslock;
 void            usertrapret(void);
-int             cow_handle(pagetable_t , uint64 );
+int             alloc_new_page_to_cow(uint64, pagetable_t );
 
 // uart.c
 void            uartinit(void);

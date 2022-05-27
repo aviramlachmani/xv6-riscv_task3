@@ -301,29 +301,25 @@ int
 uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
     pte_t *pte;
-    uint64 va, pa;
+    uint64 pa, i;
 
-    for (va = 0; va < sz; va += PGSIZE) {
-
-        if ((pte = walk(old, va, 0)) == 0)
+    for(i = 0; i < sz; i += PGSIZE){
+        if ((pte = walk(old, i, 0)) == 0)
             panic("uvmcopy: pte should exist");
         if((*pte & PTE_V) == 0)
             panic("uvmcopy: page not present");
-
         pa = PTE2PA(*pte);
+        if (*pte & PTE_W) // if this page is a writeable
+            *pte = (*pte | PTE_COW) & ~PTE_W;  // change it bit to not writeable, and turn on the copy on write bit.
 
-        if (*pte & PTE_W)
-            *pte = (*pte | PTE_COW) & ~PTE_W;
-
-        if(mappages(new, va, PGSIZE, pa, (uint)PTE_FLAGS(*pte)) < 0)
+        if(mappages(new, i, PGSIZE, pa, (uint)PTE_FLAGS(*pte)) < 0) // add the child to pte
             goto err;
-
         add_to_counter(pa);
     }
     return 0;
 
     err:
-    uvmunmap(new, 0, va / PGSIZE, 1);
+    uvmunmap(new, 0, i / PGSIZE, 1);
     return -1;
 }
 
@@ -350,8 +346,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-      if (cow_handle(pagetable, va0) < 0)
-          return -1;
+    if (alloc_new_page_to_cow(va0, pagetable) < 0) return -1;
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;

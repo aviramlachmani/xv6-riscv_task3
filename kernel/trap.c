@@ -65,10 +65,12 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if (r_scause() == 13 || r_scause() == 15) {
+  } else if (r_scause() == 13 || r_scause() == 15) { // interrupt cause by pagefault
+     uint64 va = r_stval();  // get virtual adders of process interrupt
+      if (va >= p->sz )
+          p->killed = 1;
 
-      uint64 va = r_stval();
-      if (va >= p->sz || cow_handle(p->pagetable, va) != 0)
+      else if( alloc_new_page_to_cow(va, p->pagetable) != 0) // if the pagefault is because we trying to write to un writeable page
           p->killed = 1;
 
   } else if((which_dev = devintr()) != 0){
@@ -224,33 +226,30 @@ devintr()
   }
 }
 
+
+// calling this function in case we want to write to page it isn't writable
+// so we create a copy of the page
 int
-cow_handle(pagetable_t pagetable, uint64 va)
+alloc_new_page_to_cow(uint64 va0, pagetable_t pagetable)
 {
-    va = PGROUNDDOWN(va);
-
-    if(va >= MAXVA)
+    if((va0 = PGROUNDDOWN(va0)) >= MAXVA)
         return -1;
-
     pte_t *pte;
-    if ((pte = walk(pagetable, va, 0)) == 0)
-        return -1;
-    if ((*pte & PTE_V) == 0)
+    if ((pte = walk(pagetable, va0, 0)) == 0 || (*pte & PTE_V) == 0)
         return -1;
 
-    if ((*pte & PTE_COW) == 0)
-        return 1;
-
-    char *n_pa;
-    if ((n_pa = kalloc()) != 0) {
-        uint64 pa = PTE2PA(*pte);
-        memmove(n_pa, (char*)pa, PGSIZE);
-        *pte = PA2PTE(n_pa) | ((PTE_FLAGS(*pte) & ~PTE_COW) | PTE_W);
-        kfree((void*)pa);
-
+    if ((*pte & PTE_COW) == 0 && (*pte & PTE_W) == PTE_W) // page fault is not because copy on write
         return 0;
-    } else {
-        return -1;
-    }
+
+    char *new_mem;
+    if ((new_mem = kalloc()) == 0) return -1;   // allocate new memory to copy the page
+    uint64 pa0 = PTE2PA(*pte);   //get the physical adders
+    memmove(new_mem, (char*)pa0, PGSIZE);  // copy the old page to the new memory
+   // *pte =PA2PTE(new_mem);  // set the pte to the new page offset
+    *pte = PA2PTE(new_mem)| ((PTE_FLAGS(*pte) & ~PTE_COW) | PTE_W); // change flag to writable page and not copy on write
+    kfree((void*)pa0);  // free page -> if there are counter >0 then we only dec the counter of this page
+
+    return 0;
+
 }
 
