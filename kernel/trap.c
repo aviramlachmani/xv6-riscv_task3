@@ -239,7 +239,7 @@ alloc_new_page_to_cow(uint64 va0, pagetable_t pagetable)
         return -1;
 
     if ((*pte & PTE_COW) == 0 && (*pte & PTE_W) == PTE_W) // page fault is not because copy on write
-        return 0;
+        return 1;
 
     char *new_mem;
     if ((new_mem = kalloc()) == 0) return -1;   // allocate new memory to copy the page
