@@ -63,8 +63,9 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
-int             reference_remove(uint64 );
-int             reference_add(uint64 );
+int             dec_to_counter(uint64 );
+int             add_to_counter(uint64 );
+int             compare_and_set(int * , int );
 
 // log.c
 void            initlog(int, struct superblock*);

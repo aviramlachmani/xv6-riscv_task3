@@ -318,7 +318,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
         if(mappages(new, va, PGSIZE, pa, (uint)PTE_FLAGS(*pte)) < 0)
             goto err;
 
-        reference_add(pa);
+        add_to_counter(pa);
     }
     return 0;
 

@@ -10,8 +10,8 @@
 #include "defs.h"
 
 void freerange(void *pa_start, void *pa_end);
+extern uint64 cas( volatile void *addr , int expected , int newval);
 int page_counter[NUM_PYS_PAGES];
-struct spinlock r_lock;
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
@@ -28,7 +28,6 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
-  initlock(&r_lock, "page_counter");
   freerange(end, (void*)PHYSTOP);
   for(int i=0; i< NUM_PYS_PAGES; i++){
       page_counter[i]=0;
@@ -56,7 +55,7 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
-  if (reference_remove((uint64)pa) > 0)
+  if (dec_to_counter((uint64)pa) > 0)
       return;
   page_counter[PA2INDEX(pa)] =0;
   // Fill with junk to catch dangling refs.
@@ -92,20 +91,24 @@ kalloc(void)
 }
 
 int
-reference_add(uint64 pa)
+add_to_counter(uint64 pa)
 {
     int ref;
-    acquire(&r_lock);
-    ref = ++page_counter[PA2INDEX(pa)];
-    release(&r_lock);
+     ref = compare_and_set(&page_counter[PA2INDEX(pa)], 1);
     return ref;
 }
 int
-reference_remove(uint64 pa)
+dec_to_counter(uint64 pa)
 {
     int ref;
-    acquire(&r_lock);
-    ref = --page_counter[PA2INDEX(pa)];
-    release(&r_lock);
+    ref = compare_and_set(&page_counter[PA2INDEX(pa)], -1);
     return ref;
+}
+
+int compare_and_set(int * addr, int addition){
+    int count;
+    do{
+        count = *addr;
+    }while (cas(addr, count, count+addition));
+    return count+addition;
 }
