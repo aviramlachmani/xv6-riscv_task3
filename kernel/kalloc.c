@@ -10,7 +10,8 @@
 #include "defs.h"
 
 void freerange(void *pa_start, void *pa_end);
-
+int page_counter[NUM_PYS_PAGES];
+struct spinlock r_lock;
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
@@ -27,7 +28,11 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&r_lock, "page_counter");
   freerange(end, (void*)PHYSTOP);
+  for(int i=0; i< NUM_PYS_PAGES; i++){
+      page_counter[i]=0;
+  }
 }
 
 void
@@ -51,6 +56,9 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+  if (reference_remove((uint64)pa) > 0)
+      return;
+  page_counter[PA2INDEX(pa)] =0;
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
@@ -72,11 +80,32 @@ kalloc(void)
 
   acquire(&kmem.lock);
   r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
+  if(r) {
+      kmem.freelist = r->next;
+      page_counter[PA2INDEX(r)] = 1;
+  }
   release(&kmem.lock);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+int
+reference_add(uint64 pa)
+{
+    int ref;
+    acquire(&r_lock);
+    ref = ++page_counter[PA2INDEX(pa)];
+    release(&r_lock);
+    return ref;
+}
+int
+reference_remove(uint64 pa)
+{
+    int ref;
+    acquire(&r_lock);
+    ref = --page_counter[PA2INDEX(pa)];
+    release(&r_lock);
+    return ref;
 }
